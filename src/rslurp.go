@@ -41,51 +41,6 @@ func (r *readWrapper) Read(p []byte) (int, error) {
 	return n, err
 }
 
-type uiMsg struct {
-	bytes    *uint64
-	msg      *string
-	fileDone *string
-}
-
-func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
-	defer close(done)
-	var fileDoneCount int
-	var bytes, lastBytes uint64
-	lastTime := startTime
-	p := func(m string, nl bool) {
-		fmt.Printf("\r%-*s", 80, m)
-		if nl {
-			fmt.Printf("\n")
-		}
-	}
-
-	for msg := range c {
-		now := time.Now()
-		if msg.bytes != nil {
-			bytes = *msg.bytes
-		}
-		if msg.msg != nil {
-			p(*msg.msg, true)
-		}
-		if msg.fileDone != nil {
-			if *verbose {
-				p(fmt.Sprintf("Done: %q", path.Base(*msg.fileDone)), true)
-			}
-			fileDoneCount++
-		}
-		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %d seconds = %sbps. Current: %sbps.",
-			fileDoneCount, nf, *numWorkers,
-			humanize(float64(bytes), 0),
-			int(now.Sub(startTime).Seconds()),
-			humanize(float64(bytes)/now.Sub(startTime).Seconds(), 3),
-			humanize(float64(bytes-lastBytes)/now.Sub(lastTime).Seconds(), 3),
-		), false)
-		lastBytes = bytes
-		lastTime = now
-	}
-	fmt.Printf("\n")
-}
-
 func newRequest(url string) (*http.Request, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -218,18 +173,6 @@ func downloadDir(url string) error {
 	return nil
 }
 
-type uiLogger struct {
-	uiChan chan<- uiMsg
-}
-
-func (l *uiLogger) Write(p []byte) (int, error) {
-	s := strings.Trim(string(p), "\n")
-	l.uiChan <- uiMsg{
-		msg: &s,
-	}
-	return len(p), nil
-}
-
 func downloadFiles(files []string) {
 	var done []chan struct{}
 	for i := 0; i < *numWorkers; i++ {
@@ -239,16 +182,8 @@ func downloadFiles(files []string) {
 	var counter uint64
 	startTime := time.Now()
 
-	uiDone := make(chan struct{})
-	defer func() { <-uiDone }()
-	uiChan := make(chan uiMsg, 100)
-	log.SetOutput(&uiLogger{uiChan})
-	log.SetFlags(0)
-	defer func() {
-		log.SetOutput(os.Stdout)
-		close(uiChan)
-	}()
-	go ui(startTime, len(files), uiChan, uiDone)
+	uiChan, uiCleanup := uiStart(startTime, len(files))
+	defer uiCleanup()
 
 	func() {
 		orders := make(chan order, 1000)
