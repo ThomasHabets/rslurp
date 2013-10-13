@@ -26,6 +26,8 @@ var (
 	matching   = flag.String("matching", "", "Only download files matching this regex.")
 	uiTimer    = flag.Duration("ui_delay", time.Second, "Time between progress updates.")
 	verbose    = flag.Bool("v", false, "Verbose.")
+
+	errorCount uint32
 )
 
 type readWrapper struct {
@@ -50,8 +52,11 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 	var fileDoneCount int
 	var bytes, lastBytes uint64
 	lastTime := startTime
-	p := func(m string) {
+	p := func(m string, nl bool) {
 		fmt.Printf("\r%-*s", 80, m)
+		if nl {
+			fmt.Printf("\n")
+		}
 	}
 
 	for msg := range c {
@@ -60,11 +65,11 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 			bytes = *msg.bytes
 		}
 		if msg.msg != nil {
-			p(fmt.Sprintf("%s\n", *msg.msg))
+			p(*msg.msg, true)
 		}
 		if msg.fileDone != nil {
 			if *verbose {
-				p(fmt.Sprintf("Done: %q\n", path.Base(*msg.fileDone)))
+				p(fmt.Sprintf("Done: %q", path.Base(*msg.fileDone)), true)
 			}
 			fileDoneCount++
 		}
@@ -74,7 +79,7 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 			int(now.Sub(startTime).Seconds()),
 			humanize(float64(bytes)/now.Sub(startTime).Seconds(), 3),
 			humanize(float64(bytes-lastBytes)/now.Sub(lastTime).Seconds(), 3),
-		))
+		), false)
 		lastBytes = bytes
 		lastTime = now
 	}
@@ -92,7 +97,6 @@ func newRequest(url string) (*http.Request, error) {
 }
 
 func slurp(client *http.Client, o order, counter *uint64) error {
-	//log.Printf("Downloading %q to %q", url, parts[len(parts)-1])
 	if *dryRun {
 		return nil
 	}
@@ -136,13 +140,11 @@ func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
 	defer close(done)
 	for order := range orders {
 		if *verbose {
-			s := fmt.Sprintf("Starting %q", path.Base(order.url))
-			order.ui <- uiMsg{
-				msg: &s,
-			}
+			log.Printf("Starting %q", path.Base(order.url))
 		}
 		if err := slurp(&client, order, counter); err != nil {
-			log.Printf("Failed downloading %q: %v", order.url, err)
+			log.Printf("Failed downloading %q: %v", path.Base(order.url), err)
+			atomic.AddUint32(&errorCount, 1)
 		} else {
 			s := order.url
 			order.ui <- uiMsg{
@@ -197,11 +199,11 @@ func humanize(v float64, dec int) string {
 	return fmt.Sprintf("%.*f %s", dec, v, units[n])
 }
 
-func downloadDir(url string) {
+func downloadDir(url string) error {
 	fileRE := regexp.MustCompile(*matching)
 	files, err := list(url)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fs := make([]string, 0, len(files))
 	for _, fn := range files {
@@ -213,6 +215,19 @@ func downloadDir(url string) {
 		}
 	}
 	downloadFiles(fs)
+	return nil
+}
+
+type uiLogger struct {
+	uiChan chan<- uiMsg
+}
+
+func (l *uiLogger) Write(p []byte) (int, error) {
+	s := strings.Trim(string(p), "\n")
+	l.uiChan <- uiMsg{
+		msg: &s,
+	}
+	return len(p), nil
 }
 
 func downloadFiles(files []string) {
@@ -223,10 +238,16 @@ func downloadFiles(files []string) {
 
 	var counter uint64
 	startTime := time.Now()
+
 	uiDone := make(chan struct{})
 	defer func() { <-uiDone }()
 	uiChan := make(chan uiMsg, 100)
-	defer close(uiChan)
+	log.SetOutput(&uiLogger{uiChan})
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(os.Stdout)
+		close(uiChan)
+	}()
 	go ui(startTime, len(files), uiChan, uiDone)
 
 	func() {
@@ -279,7 +300,12 @@ func main() {
 	flag.Parse()
 
 	for _, u := range flag.Args() {
-		downloadDir(u)
+		if err := downloadDir(u); err != nil {
+			log.Fatalf("Failed to start download of %q: %v", u, err)
+		}
 	}
-
+	if errorCount > 0 {
+		fmt.Printf("Number of errors: %d\n", errorCount)
+		os.Exit(1)
+	}
 }
