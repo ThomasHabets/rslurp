@@ -1,7 +1,9 @@
 package main
 
 /*
- Why: wget -np -np -r creates crap like index*
+ Why:
+ 1) wget -np -np -r creates crap like index*
+ 2) TCP slow start sucks if server doesn't support keepalive.
 */
 import (
 	"flag"
@@ -11,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -21,6 +24,8 @@ var (
 	numWorkers = flag.Int("workers", 1, "Number of worker threads.")
 	dryRun     = flag.Bool("n", false, "Dry run. Don't download anything.")
 	matching   = flag.String("matching", "", "Only download files matching this regex.")
+	uiTimer    = flag.Duration("ui_delay", time.Second, "Time between progress updates.")
+	verbose    = flag.Bool("v", false, "Verbose.")
 )
 
 type readWrapper struct {
@@ -45,24 +50,31 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 	var fileDoneCount int
 	var bytes, lastBytes uint64
 	lastTime := startTime
+	p := func(m string) {
+		fmt.Printf("\r%-*s", 80, m)
+	}
+
 	for msg := range c {
 		now := time.Now()
 		if msg.bytes != nil {
 			bytes = *msg.bytes
 		}
 		if msg.msg != nil {
-			fmt.Printf("\r%.*s\n", 80, msg.msg)
+			p(fmt.Sprintf("%s\n", *msg.msg))
 		}
 		if msg.fileDone != nil {
+			if *verbose {
+				p(fmt.Sprintf("Done: %q\n", path.Base(*msg.fileDone)))
+			}
 			fileDoneCount++
 		}
-		fmt.Printf("\r%d / %d files. %d workers. %sB in %d seconds = %sbps. Lately %sbps.",
+		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %d seconds = %sbps. Current: %sbps.",
 			fileDoneCount, nf, *numWorkers,
 			humanize(float64(bytes), 0),
 			int(now.Sub(startTime).Seconds()),
 			humanize(float64(bytes)/now.Sub(startTime).Seconds(), 3),
 			humanize(float64(bytes-lastBytes)/now.Sub(lastTime).Seconds(), 3),
-		)
+		))
 		lastBytes = bytes
 		lastTime = now
 	}
@@ -79,15 +91,14 @@ func newRequest(url string) (*http.Request, error) {
 	return req, nil
 }
 
-func slurp(client *http.Client, url string, counter *uint64) error {
-	parts := strings.Split(url, "/")
+func slurp(client *http.Client, o order, counter *uint64) error {
 	//log.Printf("Downloading %q to %q", url, parts[len(parts)-1])
 	if *dryRun {
 		return nil
 	}
-	fn := parts[len(parts)-1]
+	fn := path.Base(o.url)
 
-	req, err := newRequest(url)
+	req, err := newRequest(o.url)
 	if err != nil {
 		return err
 	}
@@ -98,7 +109,7 @@ func slurp(client *http.Client, url string, counter *uint64) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status not OK for %q: %v", url, resp.StatusCode)
+		return fmt.Errorf("status not OK for %q: %v", o.url, resp.StatusCode)
 	}
 
 	of, err := os.Create(fn)
@@ -124,11 +135,18 @@ func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
 	client := http.Client{}
 	defer close(done)
 	for order := range orders {
-		if err := slurp(&client, order.url, counter); err != nil {
+		if *verbose {
+			s := fmt.Sprintf("Starting %q", path.Base(order.url))
+			order.ui <- uiMsg{
+				msg: &s,
+			}
+		}
+		if err := slurp(&client, order, counter); err != nil {
 			log.Printf("Failed downloading %q: %v", order.url, err)
 		} else {
+			s := order.url
 			order.ui <- uiMsg{
-				fileDone: &order.url,
+				fileDone: &s,
 			}
 		}
 	}
@@ -146,9 +164,14 @@ func list(url string) ([]string, error) {
 		return nil, err
 	}
 	linkRE := regexp.MustCompile("href=\"([^\"]+)\"")
-	ret := []string{}
+
+	links := make(map[string]struct{})
 	for _, m := range linkRE.FindAllStringSubmatch(string(s), -1) {
-		ret = append(ret, m[1])
+		links[m[1]] = struct{}{}
+	}
+	ret := make([]string, 0, len(links))
+	for k := range links {
+		ret = append(ret, k)
 	}
 	return ret, err
 }
@@ -171,7 +194,7 @@ func humanize(v float64, dec int) string {
 		v /= 1000
 		n++
 	}
-	return fmt.Sprintf("%.*f %s", 3, v, units[n])
+	return fmt.Sprintf("%.*f %s", dec, v, units[n])
 }
 
 func downloadDir(url string) {
@@ -180,7 +203,19 @@ func downloadDir(url string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fs := make([]string, 0, len(files))
+	for _, fn := range files {
+		if strings.Contains(fn, "/") {
+			continue
+		}
+		if fileRE.MatchString(fn) {
+			fs = append(fs, url+fn)
+		}
+	}
+	downloadFiles(fs)
+}
 
+func downloadFiles(files []string) {
 	var done []chan struct{}
 	for i := 0; i < *numWorkers; i++ {
 		done = append(done, make(chan struct{}))
@@ -191,6 +226,7 @@ func downloadDir(url string) {
 	uiDone := make(chan struct{})
 	defer func() { <-uiDone }()
 	uiChan := make(chan uiMsg, 100)
+	defer close(uiChan)
 	go ui(startTime, len(files), uiChan, uiDone)
 
 	func() {
@@ -200,14 +236,9 @@ func downloadDir(url string) {
 			go slurper(orders, d, &counter)
 		}
 		for _, fn := range files {
-			if strings.Contains(fn, "/") {
-				continue
-			}
-			if fileRE.MatchString(fn) {
-				orders <- order{
-					url: url + fn,
-					ui:  uiChan,
-				}
+			orders <- order{
+				url: fn,
+				ui:  uiChan,
 			}
 		}
 	}()
@@ -217,7 +248,7 @@ func downloadDir(url string) {
 	go func() {
 		for {
 			timer <- struct{}{}
-			time.Sleep(time.Second)
+			time.Sleep(*uiTimer)
 		}
 	}()
 	func() {
