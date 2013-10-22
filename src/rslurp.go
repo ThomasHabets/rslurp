@@ -134,27 +134,6 @@ func list(url string) ([]string, error) {
 	return ret, err
 }
 
-func humanize(v float64, dec int) string {
-	n := 0
-	units := []string{
-		" ",
-		"k",
-		"M",
-		"G",
-		"T",
-		"P",
-		"E",
-	}
-	for _ = range units {
-		if v < 1000 {
-			break
-		}
-		v /= 1000
-		n++
-	}
-	return fmt.Sprintf("%.*f %s", dec, v, units[n])
-}
-
 func downloadDir(url string) error {
 	fileRE := regexp.MustCompile(*matching)
 	files, err := list(url)

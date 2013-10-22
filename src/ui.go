@@ -34,6 +34,34 @@ func (l *uiLogger) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func humanize(v float64, dec int) string {
+	n := 0
+	units := []string{
+		"",
+		"k",
+		"M",
+		"G",
+		"T",
+		"P",
+		"E",
+	}
+	for _ = range units {
+		if v < 1000 {
+			break
+		}
+		v /= 1000
+		n++
+	}
+	if n == 0 {
+		dec = 0
+	}
+	return fmt.Sprintf("%.*f %s", dec, v, units[n])
+}
+
+func roundSeconds(d time.Duration) time.Duration {
+	return time.Unix(int64(d.Seconds()), 0).Sub(time.Unix(0, 0))
+}
+
 func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 	defer close(done)
 	var fileDoneCount int
@@ -68,11 +96,12 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 			}
 			fileDoneCount++
 		}
-		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %ds = %sbps. Current: %sbps.",
+		elapsed := now.Sub(startTime)
+		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %s = %sbps. Current: %sbps.",
 			fileDoneCount, nf, *numWorkers,
-			humanize(float64(bytes), 0),
-			int(now.Sub(startTime).Seconds()),
-			humanize(float64(bytes)/now.Sub(startTime).Seconds(), 3),
+			humanize(float64(bytes), 3),
+			roundSeconds(elapsed),
+			humanize(float64(bytes)/elapsed.Seconds(), 3),
 			humanize(float64(bytes-lastBytes)/now.Sub(lastTime).Seconds(), 3),
 		), false)
 		lastBytes = bytes
