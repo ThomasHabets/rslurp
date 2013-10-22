@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"regexp"
 	"strings"
@@ -208,6 +209,8 @@ func downloadFiles(files []string) {
 		}
 	}()
 	func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, os.Kill)
 		for {
 			now := time.Now()
 			cur := atomic.LoadUint64(&counter)
@@ -217,6 +220,12 @@ func downloadFiles(files []string) {
 				}
 			}
 			select {
+			case sig := <-c:
+				s := "Killed by signal " + sig.String()
+				uiChan <- uiMsg{
+					msg: &s,
+				}
+				return
 			case <-done[0]:
 				done = done[1:]
 				if len(done) == 0 {
