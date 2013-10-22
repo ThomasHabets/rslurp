@@ -6,7 +6,14 @@ import (
 	"os"
 	"path"
 	"strings"
+	"syscall"
 	"time"
+
+	"code.google.com/p/go.crypto/ssh/terminal"
+)
+
+const (
+	defaultTerminalWidth = 0
 )
 
 type uiMsg struct {
@@ -33,7 +40,15 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 	var bytes, lastBytes uint64
 	lastTime := startTime
 	p := func(m string, nl bool) {
-		fmt.Printf("\r%-*s", 80, m)
+		if terminal.IsTerminal(syscall.Stdout) {
+			width := defaultTerminalWidth
+			if w, _, err := terminal.GetSize(syscall.Stdout); err == nil {
+				width = w
+			}
+			fmt.Printf("\r%-*s\r%s", width-1, "", m)
+		} else {
+			fmt.Print(m)
+		}
 		if nl {
 			fmt.Printf("\n")
 		}
@@ -53,7 +68,7 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 			}
 			fileDoneCount++
 		}
-		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %d seconds = %sbps. Current: %sbps.",
+		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %ds = %sbps. Current: %sbps.",
 			fileDoneCount, nf, *numWorkers,
 			humanize(float64(bytes), 0),
 			int(now.Sub(startTime).Seconds()),

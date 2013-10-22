@@ -1,3 +1,3 @@
 #!/bin/sh
-
-/usr/local/go/bin/go build -o rslurp src/*.go
+export GOPATH="$(pwd)"
+go build -o rslurp src/*.go
