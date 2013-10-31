@@ -4,4 +4,5 @@
 * HTTP auth.
 * Show moar digits in total download.
 * Unit tests.
-* gzip compression (tarfile and not).
+* gzip compression on output (tarfile and not).
+* HTTP gzip compression.
