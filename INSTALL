@@ -1,7 +1,0 @@
-1. Install dependencies
-=======================
-GOPATH="$(pwd)" go get code.google.com/p/go.crypto/ssh/terminal
-
-2. Build
-========
-./build
