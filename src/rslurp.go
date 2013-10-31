@@ -27,6 +27,7 @@ var (
 	matching   = flag.String("matching", "", "Only download files matching this regex.")
 	uiTimer    = flag.Duration("ui_delay", time.Second, "Time between progress updates.")
 	verbose    = flag.Bool("v", false, "Verbose.")
+	out        = flag.String("out", ".", "Output directory.")
 
 	errorCount uint32
 )
@@ -72,7 +73,7 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 		return fmt.Errorf("status not OK for %q: %v", o.url, resp.StatusCode)
 	}
 
-	of, err := os.Create(fn)
+	of, err := os.Create(path.Join(*out, fn))
 	if err != nil {
 		return err
 	}
