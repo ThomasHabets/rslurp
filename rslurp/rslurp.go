@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"git.habets.se/rslurp/fileout"
 )
 
 var (
@@ -28,8 +30,10 @@ var (
 	uiTimer    = flag.Duration("ui_delay", time.Second, "Time between progress updates.")
 	verbose    = flag.Bool("v", false, "Verbose.")
 	out        = flag.String("out", ".", "Output directory.")
+	tarOut     = flag.Bool("tar", false, "Write tar file.")
 
-	errorCount uint32
+	fileoutImpl fileout.FileOut
+	errorCount  uint32
 )
 
 type readWrapper struct {
@@ -73,15 +77,45 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 		return fmt.Errorf("status not OK for %q: %v", o.url, resp.StatusCode)
 	}
 
-	of, err := os.Create(path.Join(*out, fn))
+	var readTo io.WriteCloser
+	var tmpf *os.File
+	var fileLength int64
+
+	// TODO: only tempfile if tarout.
+	if resp.ContentLength < 0 {
+		tmpf, err = ioutil.TempFile("", "rslurp-")
+		if err != nil {
+			return fmt.Errorf("creating tempfile: %v", err)
+		}
+		defer os.Remove(tmpf.Name())
+		readTo = tmpf
+	} else {
+		readTo, err = fileoutImpl.Create(path.Join(*out, fn), resp.ContentLength)
+		if err != nil {
+			return err
+		}
+	}
+	defer readTo.Close()
+
+	r := &readWrapper{Child: resp.Body, Counter: counter}
+	fileLength, err = io.Copy(readTo, r)
 	if err != nil {
 		return err
 	}
-	defer of.Close()
 
-	r := &readWrapper{Child: resp.Body, Counter: counter}
-	if _, err := io.Copy(of, r); err != nil {
-		return err
+	// Wrote to temp file. Rewrite to proper output.
+	if resp.ContentLength < 0 {
+		if _, err := tmpf.Seek(0, 0); err != nil {
+			return fmt.Errorf("seek(0,0) in tmpfile: %v", err)
+		}
+		of, err := fileoutImpl.Create(path.Join(*out, fn), fileLength)
+		if err != nil {
+			return err
+		}
+		defer of.Close()
+		if _, err := io.Copy(of, r); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -222,6 +256,18 @@ func downloadFiles(files []string) {
 
 func main() {
 	flag.Parse()
+
+	if *tarOut {
+		taroutf, err := os.Create(*out)
+		if err != nil {
+			log.Fatalf("Opening output tar file %q: %v", *out, err)
+		}
+		defer taroutf.Close()
+		fileoutImpl = fileout.NewTarOut(taroutf)
+	} else {
+		fileoutImpl = &fileout.NormalFileOut{}
+	}
+	defer fileoutImpl.Close()
 
 	for _, u := range flag.Args() {
 		if err := downloadDir(u); err != nil {
