@@ -97,12 +97,12 @@ func ui(startTime time.Time, nf int, c <-chan uiMsg, done chan<- struct{}) {
 			fileDoneCount++
 		}
 		elapsed := now.Sub(startTime)
-		p(fmt.Sprintf("%d / %d files. %d workers. %sB in %s = %sBps. Current: %sBps.",
+		p(fmt.Sprintf("%d/%d files. %d workers. %sB in %s = %sBps. Current: %sBps",
 			fileDoneCount, nf, *numWorkers,
 			humanize(float64(bytes), 3),
 			roundSeconds(elapsed),
-			humanize(float64(bytes)/elapsed.Seconds(), 3),
-			humanize(float64(bytes-lastBytes)/now.Sub(lastTime).Seconds(), 3),
+			humanize(float64(bytes)/elapsed.Seconds(), 1),
+			humanize(float64(bytes-lastBytes)/now.Sub(lastTime).Seconds(), 1),
 		), false)
 		lastBytes = bytes
 		lastTime = now
