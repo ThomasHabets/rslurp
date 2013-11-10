@@ -169,22 +169,24 @@ func list(url string) ([]string, error) {
 	return ret, err
 }
 
-func downloadDir(url string) error {
+func downloadDirs(url []string) error {
 	fileRE := regexp.MustCompile(*matching)
-	files, err := list(url)
-	if err != nil {
-		return err
-	}
-	fs := make([]string, 0, len(files))
-	for _, fn := range files {
-		if strings.Contains(fn, "/") {
-			continue
+	var files []string
+	for _, d := range url {
+		fs, err := list(d)
+		if err != nil {
+			return err
 		}
-		if fileRE.MatchString(fn) {
-			fs = append(fs, url+fn)
+		for _, fn := range fs {
+			if strings.Contains(fn, "/") {
+				continue
+			}
+			if fileRE.MatchString(fn) {
+				files = append(files, d+fn)
+			}
 		}
 	}
-	downloadFiles(fs)
+	downloadFiles(files)
 	return nil
 }
 
@@ -269,10 +271,8 @@ func main() {
 	}
 	defer fileoutImpl.Close()
 
-	for _, u := range flag.Args() {
-		if err := downloadDir(u); err != nil {
-			log.Fatalf("Failed to start download of %q: %v", u, err)
-		}
+	if err := downloadDirs(flag.Args()); err != nil {
+		log.Fatalf("Failed to start download of %q: %v", flag.Args(), err)
 	}
 	if errorCount > 0 {
 		fmt.Printf("Number of errors: %d\n", errorCount)

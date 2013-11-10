@@ -6,3 +6,4 @@
 * Unit tests.
 * gzip compression on output (tarfile and not).
 * HTTP gzip compression.
+* robots.txt support
