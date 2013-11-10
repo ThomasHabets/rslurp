@@ -245,6 +245,10 @@ func downloadFiles(files []string) {
 			case <-done[0]:
 				done = done[1:]
 				if len(done) == 0 {
+					cur := atomic.LoadUint64(&counter)
+					uiChan <- uiMsg{
+						bytes: &cur,
+					}
 					return
 				}
 			case <-timer:
