@@ -275,6 +275,10 @@ func main() {
 	}
 	defer fileoutImpl.Close()
 
+	if flag.NArg() == 0 {
+		return
+	}
+
 	if err := downloadDirs(flag.Args()); err != nil {
 		log.Fatalf("Failed to start download of %q: %v", flag.Args(), err)
 	}
