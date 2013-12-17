@@ -145,6 +145,8 @@ func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
 	}
 }
 
+// list takes an URL to a directory and returns a slice of all of them.
+// Links absolute and relative links as-is.
 func list(url string) ([]string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -176,6 +178,10 @@ func downloadDirs(url []string) error {
 		fs, err := list(d)
 		if err != nil {
 			return err
+		}
+		
+		if !strings.HasSuffix(d, "/") {
+			d += "/"
 		}
 		for _, fn := range fs {
 			if strings.Contains(fn, "/") {
