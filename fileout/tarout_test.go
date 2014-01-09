@@ -4,11 +4,11 @@ import (
 	"testing"
 )
 
-func TestEmptyName(t *testing.T) {
+func TestTarEmptyName(t *testing.T) {
 }
-func TestBadName(t *testing.T) {
+func TestTarBadName(t *testing.T) {
 }
-func TestEmptyFile(t *testing.T) {
+func TestTarEmptyFile(t *testing.T) {
 }
-func TestSomeData(t *testing.T) {
+func TestTarSomeData(t *testing.T) {
 }
