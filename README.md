@@ -17,3 +17,10 @@ wget -nd -np -r creates garbage files (index*), isn't parallel, and to my
 knowledge can't restrict itself to a subset of files. Also it's spammy in its
 status output.
 
+Building
+--------
+In a temporary dir:
+```
+GOPATH="$(pwd)" go get github.com/ThomasHabets/rslurp/rslurp
+cp bin/rslurp /usr/local/bin/
+```
