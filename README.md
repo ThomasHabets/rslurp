@@ -24,3 +24,9 @@ In a temporary dir:
 GOPATH="$(pwd)" go get github.com/ThomasHabets/rslurp/rslurp
 cp bin/rslurp /usr/local/bin/
 ```
+
+Example use
+-----------
+```
+rslurp -workers=5 -matching='jpg$' http://foo.com/images/ http://foo.com/static/
+```
