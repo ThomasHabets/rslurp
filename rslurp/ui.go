@@ -42,8 +42,6 @@ func humanize(v float64, dec int) string {
 		"M",
 		"G",
 		"T",
-		"P",
-		"E",
 	}
 	for _ = range units {
 		if v < 1000 {
@@ -54,6 +52,9 @@ func humanize(v float64, dec int) string {
 	}
 	if n == 0 {
 		dec = 0
+	}
+	if n >= len(units) {
+		return fmt.Sprintf("??? M")
 	}
 	return fmt.Sprintf("%.*f %s", dec, v, units[n])
 }
