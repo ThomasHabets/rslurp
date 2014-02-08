@@ -58,23 +58,39 @@ func newRequest(url string) (*http.Request, error) {
 	return req, nil
 }
 
+// slurp downloads one file to the current directory.
 func slurp(client *http.Client, o order, counter *uint64) error {
 	if *dryRun {
 		return nil
 	}
 	fn := path.Base(o.url)
+	fullFilename := path.Join(*out, fn)
 
 	req, err := newRequest(o.url)
 	if err != nil {
 		return err
 	}
 
+	if fileoutImpl.HasPartial() {
+		if info, err := os.Stat(fullFilename); err == nil {
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", info.Size()))
+		}
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
+	partial := false
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusPartialContent:
+		partial = true
+	case http.StatusRequestedRangeNotSatisfiable:
+		// File fully downloaded.
+		return nil
+	default:
 		return fmt.Errorf("status not OK for %q: %v", o.url, resp.StatusCode)
 	}
 
@@ -91,7 +107,11 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 		defer os.Remove(tmpf.Name())
 		readTo = tmpf
 	} else {
-		readTo, err = fileoutImpl.Create(path.Join(*out, fn), resp.ContentLength)
+		if partial {
+			readTo, err = fileoutImpl.Append(fullFilename, resp.ContentLength)
+		} else {
+			readTo, err = fileoutImpl.Create(fullFilename, resp.ContentLength)
+		}
 		if err != nil {
 			return err
 		}
@@ -109,7 +129,7 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 		if _, err := tmpf.Seek(0, 0); err != nil {
 			return fmt.Errorf("seek(0,0) in tmpfile: %v", err)
 		}
-		of, err := fileoutImpl.Create(path.Join(*out, fn), fileLength)
+		of, err := fileoutImpl.Create(fullFilename, fileLength)
 		if err != nil {
 			return err
 		}

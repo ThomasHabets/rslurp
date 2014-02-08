@@ -4,6 +4,7 @@ package fileout
 
 import (
 	"archive/tar"
+	"fmt"
 	"io"
 )
 
@@ -26,6 +27,13 @@ func NewTarOut(w io.Writer) *TarOut {
 	return &TarOut{
 		w: tar.NewWriter(w),
 	}
+}
+
+func (*TarOut) HasPartial() bool {
+	return false
+}
+func (t *TarOut) Append(fn string, size int64) (io.WriteCloser, error) {
+	return nil, fmt.Errorf("Tar output does not support resume.")
 }
 
 func (t *TarOut) Create(fn string, size int64) (io.WriteCloser, error) {
