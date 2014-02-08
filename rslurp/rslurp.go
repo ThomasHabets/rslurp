@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -179,7 +180,7 @@ func downloadDirs(url []string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		if !strings.HasSuffix(d, "/") {
 			d += "/"
 		}
@@ -280,6 +281,8 @@ func main() {
 		fileoutImpl = &fileout.NormalFileOut{}
 	}
 	defer fileoutImpl.Close()
+
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	if flag.NArg() == 0 {
 		return
