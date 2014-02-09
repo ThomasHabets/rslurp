@@ -87,8 +87,10 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 	case http.StatusOK:
 	case http.StatusPartialContent:
 		partial = true
+		// TODO: check response headers that we actually got the partial we asked for.
 	case http.StatusRequestedRangeNotSatisfiable:
 		// File fully downloaded.
+		// TODO: check that size matches.
 		return nil
 	default:
 		return fmt.Errorf("status not OK for %q: %v", o.url, resp.StatusCode)
@@ -134,7 +136,7 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 			return err
 		}
 		defer of.Close()
-		if _, err := io.Copy(of, r); err != nil {
+		if _, err := io.Copy(of, tmpf); err != nil {
 			return err
 		}
 	}
