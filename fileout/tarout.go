@@ -32,6 +32,11 @@ func NewTarOut(w io.Writer) *TarOut {
 func (*TarOut) HasPartial() bool {
 	return false
 }
+
+func (*TarOut) FixedSizeOnly() bool {
+	return true
+}
+
 func (t *TarOut) Append(fn string, size int64) (io.WriteCloser, error) {
 	return nil, fmt.Errorf("Tar output does not support resume.")
 }

@@ -100,8 +100,7 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 	var tmpf *os.File
 	var fileLength int64
 
-	// TODO: only tempfile if tarout.
-	if resp.ContentLength < 0 {
+	if fileoutImpl.FixedSizeOnly() && resp.ContentLength < 0 {
 		tmpf, err = ioutil.TempFile("", "rslurp-")
 		if err != nil {
 			return fmt.Errorf("creating tempfile: %v", err)
@@ -127,7 +126,7 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 	}
 
 	// Wrote to temp file. Rewrite to proper output.
-	if resp.ContentLength < 0 {
+	if fileoutImpl.FixedSizeOnly() && resp.ContentLength < 0 {
 		if _, err := tmpf.Seek(0, 0); err != nil {
 			return fmt.Errorf("seek(0,0) in tmpfile: %v", err)
 		}

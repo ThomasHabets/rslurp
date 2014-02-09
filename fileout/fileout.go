@@ -10,12 +10,17 @@ type FileOut interface {
 	Append(fn string, size int64) (io.WriteCloser, error)
 	Close() error
 	HasPartial() bool
+	FixedSizeOnly() bool
 }
 
 type NormalFileOut struct{}
 
 func (*NormalFileOut) HasPartial() bool {
 	return true
+}
+
+func (*NormalFileOut) FixedSizeOnly() bool {
+	return false
 }
 
 func (*NormalFileOut) Create(fn string, size int64) (io.WriteCloser, error) {
