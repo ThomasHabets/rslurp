@@ -105,7 +105,7 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 		if err != nil {
 			return fmt.Errorf("creating tempfile: %v", err)
 		}
-		defer os.Remove(tmpf.Name())
+		os.Remove(tmpf.Name())
 		readTo = tmpf
 	} else {
 		if partial {
