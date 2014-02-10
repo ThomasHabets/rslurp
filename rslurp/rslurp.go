@@ -292,6 +292,9 @@ func main() {
 	flag.Parse()
 
 	if *tarOut {
+		if *numWorkers != 1 {
+			log.Fatalf("Can only use one worker with -tar.")
+		}
 		taroutf, err := os.Create(*out)
 		if err != nil {
 			log.Fatalf("Opening output tar file %q: %v", *out, err)
