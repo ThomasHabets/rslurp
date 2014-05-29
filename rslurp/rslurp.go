@@ -6,6 +6,7 @@ package main
  2) TCP slow start sucks if server doesn't support keepalive.
 */
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,6 +27,7 @@ import (
 )
 
 var (
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	numWorkers = flag.Int("workers", 1, "Number of worker threads.")
 	dryRun     = flag.Bool("n", false, "Dry run. Don't download anything.")
 	matching   = flag.String("matching", "", "Only download files matching this regex.")
@@ -32,6 +35,7 @@ var (
 	verbose    = flag.Bool("v", false, "Verbose.")
 	out        = flag.String("out", ".", "Output directory.")
 	tarOut     = flag.Bool("tar", false, "Write tar file.")
+	verifyCert = flag.Bool("verify_cert", true, "Verify SSL cert of server.")
 
 	fileoutImpl fileout.FileOut
 	errorCount  uint32
@@ -148,14 +152,27 @@ type order struct {
 	ui  chan<- uiMsg
 }
 
+func mkClient() *http.Client {
+	client := &http.Client{}
+	if !*verifyCert {
+		client.Transport = &http.Transport{
+			DisableCompression: true,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+
+	}
+	return client
+}
 func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
-	client := http.Client{}
+	client := mkClient()
 	defer close(done)
 	for order := range orders {
 		if *verbose {
 			log.Printf("Starting %q", path.Base(order.url))
 		}
-		if err := slurp(&client, order, counter); err != nil {
+		if err := slurp(client, order, counter); err != nil {
 			log.Printf("Failed downloading %q: %v", path.Base(order.url), err)
 			atomic.AddUint32(&errorCount, 1)
 		} else {
@@ -170,9 +187,10 @@ func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
 // list takes an URL to a directory and returns a slice of all of them.
 // Links absolute and relative links as-is.
 func list(url string) ([]string, error) {
-	resp, err := http.Get(url)
+	client := mkClient()
+	resp, err := client.Get(url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list dir: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -290,7 +308,14 @@ func downloadFiles(files []string) {
 
 func main() {
 	flag.Parse()
-
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	if *tarOut {
 		if *numWorkers != 1 {
 			log.Fatalf("Can only use one worker with -tar.")
