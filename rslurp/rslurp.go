@@ -27,15 +27,16 @@ import (
 )
 
 var (
-	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-	numWorkers = flag.Int("workers", 1, "Number of worker threads.")
-	dryRun     = flag.Bool("n", false, "Dry run. Don't download anything.")
-	matching   = flag.String("matching", "", "Only download files matching this regex.")
-	uiTimer    = flag.Duration("ui_delay", time.Second, "Time between progress updates.")
-	verbose    = flag.Bool("v", false, "Verbose.")
-	out        = flag.String("out", ".", "Output directory.")
-	tarOut     = flag.Bool("tar", false, "Write tar file.")
-	verifyCert = flag.Bool("verify_cert", true, "Verify SSL cert of server.")
+	cpuprofile  = flag.String("cpuprofile", "", "write cpu profile to file")
+	numWorkers  = flag.Int("workers", 1, "Number of worker threads.")
+	dryRun      = flag.Bool("n", false, "Dry run. Don't download anything.")
+	matching    = flag.String("matching", "", "Only download files matching this regex.")
+	uiTimer     = flag.Duration("ui_delay", time.Second, "Time between progress updates.")
+	verbose     = flag.Bool("v", false, "Verbose.")
+	out         = flag.String("out", ".", "Output directory.")
+	tarOut      = flag.Bool("tar", false, "Write tar file.")
+	verifyCert  = flag.Bool("verify_cert", true, "Verify SSL cert of server.")
+	fastCiphers = flag.Bool("fast_cipher", false, "Only use fast ciphers (RC4).")
 
 	fileoutImpl fileout.FileOut
 	errorCount  uint32
@@ -154,11 +155,29 @@ type order struct {
 
 func mkClient() *http.Client {
 	client := &http.Client{}
+	cipherSuites := []uint16{
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	}
+	if *fastCiphers {
+		cipherSuites = []uint16{
+			tls.TLS_RSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+		}
+	}
 	if !*verifyCert {
 		client.Transport = &http.Transport{
 			DisableCompression: true,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
+				CipherSuites:       cipherSuites,
 			},
 		}
 
