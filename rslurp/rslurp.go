@@ -38,9 +38,18 @@ var (
 	verifyCert  = flag.Bool("verify_cert", true, "Verify SSL cert of server.")
 	fastCiphers = flag.Bool("fast_cipher", false, "Only use fast ciphers (RC4).")
 
+	username string
+	password string
+
 	fileoutImpl fileout.FileOut
 	errorCount  uint32
 )
+
+func init() {
+	// TODO: add ability to read these from file or env.
+	flag.StringVar(&username, "username", "", "Username to user for basicauth.")
+	flag.StringVar(&password, "password", "", "Password to user for basicauth.")
+}
 
 type readWrapper struct {
 	Child   io.Reader
@@ -58,7 +67,9 @@ func newRequest(url string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	if len(username) != 0 {
+		req.SetBasicAuth(username, password)
+	}
 	req.Header.Set("User-Agent", "rslurp 0.1")
 	return req, nil
 }
@@ -207,11 +218,18 @@ func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
 // Links absolute and relative links as-is.
 func list(url string) ([]string, error) {
 	client := mkClient()
-	resp, err := client.Get(url)
+	req, err := newRequest(url)
+	if err != nil {
+		return nil, fmt.Errorf("prepare request dir: %v", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("list dir: %v", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP non-200: %d %s", resp.StatusCode, resp.Status)
+	}
 
 	s, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
