@@ -7,6 +7,7 @@ package main
 */
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io"
@@ -37,12 +38,14 @@ var (
 	tarOut      = flag.Bool("tar", false, "Write tar file.")
 	verifyCert  = flag.Bool("verify_cert", true, "Verify SSL cert of server.")
 	fastCiphers = flag.Bool("fast_cipher", false, "Only use fast ciphers (RC4).")
+	rootCAFile  = flag.String("root_ca", "", "Root CA.")
 
 	username string
 	password string
 
 	fileoutImpl fileout.FileOut
 	errorCount  uint32
+	rootCAs     *x509.CertPool
 )
 
 func init() {
@@ -183,16 +186,19 @@ func mkClient() *http.Client {
 			tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
 		}
 	}
-	if !*verifyCert {
-		client.Transport = &http.Transport{
-			DisableCompression: true,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-				CipherSuites:       cipherSuites,
-			},
-		}
-
+	transport := &http.Transport{
+		DisableCompression: true,
+		TLSClientConfig: &tls.Config{
+			CipherSuites: cipherSuites,
+		},
 	}
+	if !*verifyCert {
+		transport.TLSClientConfig.InsecureSkipVerify = true
+	}
+	if rootCAs != nil {
+		transport.TLSClientConfig.RootCAs = rootCAs
+	}
+	client.Transport = transport
 	return client
 }
 func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
@@ -345,6 +351,22 @@ func downloadFiles(files []string) {
 
 func main() {
 	flag.Parse()
+
+	if *rootCAFile != "" {
+		f, err := os.Open(*rootCAFile)
+		if err != nil {
+			log.Fatalf("Failed to open %q: %v", *rootCAFile, err)
+		}
+		defer f.Close()
+		d, err := ioutil.ReadAll(f)
+		if err != nil {
+			log.Fatalf("Failed to read %q: %v", *rootCAFile, err)
+		}
+		rootCAs = x509.NewCertPool()
+		if !rootCAs.AppendCertsFromPEM(d) {
+			log.Fatalf("Failed to parse %q", *rootCAFile)
+		}
+	}
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
