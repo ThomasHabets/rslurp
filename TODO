@@ -1,7 +1,4 @@
-* Monotonic clock for speed measurements.
-* Continue download when interrupted or file exists.
 * HTTPS stuff (client certs).
-* HTTP auth.
 * Show moar digits in total download.
 * Unit tests.
 * gzip compression on output (tarfile and not).
