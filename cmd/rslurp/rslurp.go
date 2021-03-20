@@ -27,6 +27,10 @@ import (
 	"github.com/ThomasHabets/rslurp/pkg/fileout"
 )
 
+const (
+	version = "0.2beta"
+)
+
 var (
 	cpuprofile  = flag.String("cpuprofile", "", "write cpu profile to file")
 	numWorkers  = flag.Int("workers", 1, "Number of worker threads.")
@@ -73,7 +77,7 @@ func newRequest(url string) (*http.Request, error) {
 	if len(username) != 0 {
 		req.SetBasicAuth(username, password)
 	}
-	req.Header.Set("User-Agent", "rslurp 0.1")
+	req.Header.Set("User-Agent", fmt.Sprintf("rslurp %s", version))
 	return req, nil
 }
 
