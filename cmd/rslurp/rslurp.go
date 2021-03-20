@@ -24,7 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ThomasHabets/rslurp/fileout"
+	"github.com/ThomasHabets/rslurp/pkg/fileout"
 )
 
 var (
