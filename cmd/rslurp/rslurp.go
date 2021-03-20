@@ -50,6 +50,8 @@ var (
 	fileoutImpl fileout.FileOut
 	errorCount  uint32
 	rootCAs     *x509.CertPool
+
+	contentRangeRE = regexp.MustCompile(`^bytes (\d+)-(\d+)/(\d+)$`)
 )
 
 func init() {
@@ -94,9 +96,11 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 		return err
 	}
 
+	var wantSize int64
 	if fileoutImpl.HasPartial() {
 		if info, err := os.Stat(fullFilename); err == nil {
-			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", info.Size()))
+			wantSize = info.Size()
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", wantSize))
 		}
 	}
 
@@ -110,10 +114,17 @@ func slurp(client *http.Client, o order, counter *uint64) error {
 	case http.StatusOK:
 	case http.StatusPartialContent:
 		partial = true
-		// TODO: check response headers that we actually got the partial we asked for.
+		hs := resp.Header.Get("Content-Range")
+		m := contentRangeRE.FindStringSubmatch(hs)
+		if len(m) == 0 {
+			return fmt.Errorf("partial content with bad Content-Range header %q", hs)
+		}
+		if got, want := m[1], fmt.Sprint(wantSize); got != want {
+			return fmt.Errorf("got partial content with range start %s, want %s", got, want)
+		}
 	case http.StatusRequestedRangeNotSatisfiable:
 		// File fully downloaded.
-		// TODO: check that size matches.
+		// TODO: check that size matches exactly.
 		return nil
 	default:
 		return fmt.Errorf("status not OK for %q: %v", o.url, resp.StatusCode)
