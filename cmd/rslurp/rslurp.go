@@ -51,6 +51,7 @@ var (
 	errorCount  uint32
 	rootCAs     *x509.CertPool
 
+	linkRE         = regexp.MustCompile(`href="([^"]+)"`)
 	contentRangeRE = regexp.MustCompile(`^bytes (\d+)-(\d+)/(\d+)$`)
 )
 
@@ -256,7 +257,6 @@ func list(url string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	linkRE := regexp.MustCompile("href=\"([^\"]+)\"")
 
 	links := make(map[string]struct{})
 	for _, m := range linkRE.FindAllStringSubmatch(string(s), -1) {
@@ -270,7 +270,10 @@ func list(url string) ([]string, error) {
 }
 
 func downloadDirs(url []string) error {
-	fileRE := regexp.MustCompile(*matching)
+	fileRE, err := regexp.Compile(*matching)
+	if err != nil {
+		log.Fatalf("Bad matching expression %q: %v", *matching, err)
+	}
 	var files []string
 	for _, d := range url {
 		fs, err := list(d)
