@@ -269,6 +269,10 @@ func list(url string) ([]string, error) {
 	return ret, err
 }
 
+// downloadDirs a set of dirs.
+//
+// It first lists all the dirs, then starts downloads. This is to more
+// easily show progress in number of files.
 func downloadDirs(url []string) error {
 	fileRE, err := regexp.Compile(*matching)
 	if err != nil {
@@ -297,8 +301,9 @@ func downloadDirs(url []string) error {
 	return nil
 }
 
+// downloadFiles downloads all the given files using workers.
 func downloadFiles(files []string) {
-	var done []chan struct{}
+	var done []chan struct{} // goroutine exit channels.
 	for i := 0; i < *numWorkers; i++ {
 		done = append(done, make(chan struct{}))
 	}
@@ -309,8 +314,9 @@ func downloadFiles(files []string) {
 	uiChan, uiCleanup := uiStart(startTime, len(files))
 	defer uiCleanup()
 
+	// Start all workers and enqueue all orders.
 	func() {
-		orders := make(chan order, 1000)
+		orders := make(chan order, len(files))
 		defer close(orders)
 		for _, d := range done {
 			go slurper(orders, d, &counter)
@@ -322,49 +328,37 @@ func downloadFiles(files []string) {
 			}
 		}
 	}()
-	lastTime := startTime
-	var lastCounter uint64
-	timer := make(chan struct{})
-	go func() {
-		for {
-			timer <- struct{}{}
-			time.Sleep(*uiTimer)
-		}
-	}()
-	func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, os.Kill)
-		for {
-			now := time.Now()
-			cur := atomic.LoadUint64(&counter)
-			if now.Sub(startTime).Seconds() > 1 {
+
+	timer := time.NewTicker(*uiTimer)
+	defer timer.Stop()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	for {
+		select {
+		case sig := <-c:
+			s := "Killed by signal " + sig.String()
+			uiChan <- uiMsg{
+				msg: &s,
+			}
+			return
+		case <-done[0]:
+			done = done[1:]
+			if len(done) == 0 {
+				cur := atomic.LoadUint64(&counter)
 				uiChan <- uiMsg{
 					bytes: &cur,
 				}
-			}
-			select {
-			case sig := <-c:
-				s := "Killed by signal " + sig.String()
-				uiChan <- uiMsg{
-					msg: &s,
-				}
 				return
-			case <-done[0]:
-				done = done[1:]
-				if len(done) == 0 {
-					cur := atomic.LoadUint64(&counter)
-					uiChan <- uiMsg{
-						bytes: &cur,
-					}
-					return
-				}
-			case <-timer:
-				break
 			}
-			lastCounter = cur
-			lastTime = now
+		case <-timer.C:
+			cur := atomic.LoadUint64(&counter)
+			uiChan <- uiMsg{
+				bytes: &cur,
+			}
+			break
 		}
-	}()
+	}
 }
 
 func main() {
