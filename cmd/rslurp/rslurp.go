@@ -43,6 +43,7 @@ var (
 	verifyCert  = flag.Bool("verify_cert", true, "Verify SSL cert of server.")
 	fastCiphers = flag.Bool("fast_cipher", false, "Only use fast ciphers (RC4).")
 	rootCAFile  = flag.String("root_ca", "", "Root CA.")
+	retry       = flag.Bool("retry", false, "Retry downloading a file until success.")
 
 	username string
 	password string
@@ -51,6 +52,7 @@ var (
 	errorCount  uint32
 	rootCAs     *x509.CertPool
 
+	retryDelay     = time.Second
 	linkRE         = regexp.MustCompile(`href="([^"]+)"`)
 	contentRangeRE = regexp.MustCompile(`^bytes (\d+)-(\d+)/(\d+)$`)
 )
@@ -224,14 +226,22 @@ func slurper(orders <-chan order, done chan<- struct{}, counter *uint64) {
 		if *verbose {
 			log.Printf("Starting %q", path.Base(order.url))
 		}
-		if err := slurp(client, order, counter); err != nil {
-			log.Printf("Failed downloading %q: %v", path.Base(order.url), err)
-			atomic.AddUint32(&errorCount, 1)
-		} else {
-			s := order.url
-			order.ui <- uiMsg{
-				fileDone: &s,
+		for {
+			if err := slurp(client, order, counter); err != nil {
+				log.Printf("Failed downloading %q: %v", path.Base(order.url), err)
+				atomic.AddUint32(&errorCount, 1)
+				if *retry {
+					time.Sleep(retryDelay)
+					log.Printf("Retrying %q", path.Base(order.url))
+					continue
+				}
+			} else {
+				s := order.url
+				order.ui <- uiMsg{
+					fileDone: &s,
+				}
 			}
+			break
 		}
 	}
 }
